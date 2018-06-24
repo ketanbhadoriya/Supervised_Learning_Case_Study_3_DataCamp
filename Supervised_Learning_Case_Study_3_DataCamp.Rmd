@@ -1,0 +1,141 @@
+---
+title: "Predicting whether person will vote or not; in US presidential election (2016), based on a survey."
+author: "Ketan Bhadoriya"
+output: html_document
+---
+######*Note : Data Taken from Datacamp.com from a Supervised Learning Course and Case Study performed under the guidance of the Tutor Julia Silge Data Scientist at Stack Overflow.*
+
+###Loading the Data and the required Packages
+
+```{r,warning=FALSE,message=FALSE}
+library(RCurl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(broom)
+library(caret)
+library(yardstick)
+
+x <- getURL("https://assets.datacamp.com/production/course_6013/datasets/voters.csv")
+
+voters <- read.csv(textConnection((x)))
+```
+
+###Exlporing the Data
+
+```{r,warning=FALSE,message=FALSE}
+str(voters)
+
+#How many people voted?
+
+voters %>%
+  count(turnout16_2016)
+
+# How do the reponses on the survey vary with voting behavior?
+
+voters %>%
+  group_by(turnout16_2016) %>%
+  summarize(`Elections don't matter` = mean(RIGGED_SYSTEM_1_2016 <= 2),
+            `Economy is getting better` = mean(econtrend_2016 == 1),
+            `Crime is very important` = mean(imiss_a_2016 == 2))
+
+#Comment - The people who say 'Elections don't matter are less likely to vote #and same in case of who say 'Crime is very Important'
+
+#Visualizing difference by voter turnout
+
+table(voters$econtrend_2016)
+
+voters %>%
+  ggplot(aes(econtrend_2016, ..density.., fill = turnout16_2016)) +
+  geom_histogram(alpha = 0.5, position = "identity", binwidth = 1) +
+  labs(title = "Overall, is the economy getting better or worse?")
+
+#1 indicates "getting better", 2 indicates "about the same", 
+#3 indicates "getting worse", and 4 indicates "don't know".
+```
+
+###Building a simple model
+
+```{r,warning=FALSE,message=FALSE}
+# Removing the case_indetifier column
+voters_select <- voters %>%
+  select(-case_identifier)
+
+# Building a simple logistic regression model
+simple_glm <- glm(turnout16_2016 ~ .,  family = "binomial", 
+                  data = voters_select)
+
+# summary of simple model                 
+#To see which predictors are more significant for modeling
+summary(simple_glm)
+```
+
+###Creating Training and Testing Data
+
+```{r,warning=FALSE,message=FALSE}
+# Split data into training and testing sets
+set.seed(1234)
+in_train <- createDataPartition(voters_select$turnout16_2016, 
+                                p = 0.8, list = FALSE)
+training <- voters_select[in_train, ]
+nrow(training)
+testing <- voters_select[-in_train, ]
+nrow(testing)
+```
+
+###Machine Learning Models
+
+```{r,warning=FALSE,message=FALSE,results='hide'}
+#Perform ed logistic regression with upsampling and cross validation resampling
+
+vote_glm <- train(turnout16_2016 ~ ., method = "glm", family = "binomial",
+                  data = training,
+                  trControl = trainControl(method = "cv",
+                                           number = 10,
+                                           verboseIter = TRUE,
+                                           sampling = "up"))
+
+
+
+#Random forest
+
+vote_rf <- train(turnout16_2016 ~ ., method = "rf", family = "binomial",
+                 data = training,
+                 trControl = trainControl(method = "cv",
+                                          number = 10,
+                                          verboseIter = TRUE,
+                                          sampling = "up"))
+
+```
+
+###Comparing the two models and confusion matrix
+
+```{r,warning=FALSE,message=FALSE}
+testing_results <- testing %>%
+  mutate(`Logistic Regression`=predict(vote_glm,testing),
+         `Random Forest`=predict(vote_rf,testing))
+
+#Confusion matrix for Logistic Regression Model
+confusionMatrix(predict(vote_glm,testing),testing$turnout16_2016)
+
+#Confusion Matrix for Random Forest Model
+confusionMatrix(predict(vote_rf,testing),testing$turnout16_2016)
+
+
+#Logistic Regression Value
+sens(testing_results,truth=turnout16_2016,estimate = `Logistic Regression`)
+spec(testing_results,truth=turnout16_2016,estimate = `Logistic Regression`)
+
+#As sensitivity and specificity are almost same; the model doesnt overfir the data
+
+#Random forest value
+sens(testing_results,truth=turnout16_2016,estimate = `Random Forest`)
+spec(testing_results,truth=turnout16_2016,estimate = `Random Forest`)
+```
+
+**Comment : We can clearly see that here randomforest model overfits the data as;The sensitivity is zero and no similar to specifity.**
+
+
+
+
+
